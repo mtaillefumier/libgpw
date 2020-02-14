@@ -162,6 +162,7 @@ template <typename T> bool copy_poly_in_tmp(const int dir,
 																						mdarray<T, 3, CblasRowMajor> &polynomials_tmp,
 																						mdarray<T, 2, CblasRowMajor> &xi)
 {
+		memset(polynomials_tmp.template at<CPU>(dir, 0, 0), 0, sizeof(T) * (upper_corner - lower_corner));
 		// check if we have no zero polynomials elements
 
 		// check if the window at position pos [pos * period, (pos + 1) * period] intersects [poly_min .. poly_max]

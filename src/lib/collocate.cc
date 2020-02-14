@@ -752,15 +752,13 @@ template <typename T> void collocate_non_orthorombic(const mdarray<T, 3, CblasRo
                                                      const int *gaussian_center, // compared to the (0, 0, 0) of the global grid.
                                                      const int *period,
                                                      const mdarray<T, 2, CblasRowMajor> &basis,
-                                                     const T*__restrict dr,
                                                      const T eta_12,
-                                                     const T *__restrict r_12,
                                                      mdarray<T, 3, CblasRowMajor> &density)
 {
     int dir_min[3];
     int dir_max[3];
 
-    mdarray<T, 3, CblasRowMajor>	polynomials_tmp(3, polynomials.size(1), std::max(std::max(density.size(0), density.size(1)), density.size(2)));
+    mdarray<T, 3, CblasRowMajor>	polynomials_tmp(3, polynomials.size(1) - 1, std::max(std::max(density.size(0), density.size(1)), density.size(2)));
     mdarray<T, 2, CblasRowMajor>	xi(3, std::max(std::max(density.size(0), density.size(1)), density.size(2)));
     mdarray<T, 3, CblasRowMajor>	Exp(3,
                                       std::max(std::max(density.size(0), density.size(1)), density.size(2)),
@@ -778,56 +776,51 @@ template <typename T> void collocate_non_orthorombic(const mdarray<T, 3, CblasRo
         dir_min[dir] = poly_min[dir] / period[dir] - 1;
         dir_max[dir] = poly_max[dir] + 1;
     }
-    polynomials_tmp.zero();
-
-    for (int s = 0; s < 3; s++) {
-        for (int d1 = 0; d1 < Exp.size(1); d1++)
-            for (int d2 = 0; d2 < Exp.size(2); d2++)
-                Exp(s, d1, d2) = exp(-0.0001);
-    }
-
     for (int z = dir_min[0]; z <= dir_max[0]; z++) {
         polynomials_tmp.zero();
         xi.zero();
-        if (!copy_poly_in_tmp(0,
-                              z,
-                              period[0],
-                              lower_corner[0],
-                              upper_corner[0],
-                              polynomials,
-                              poly_min[0],
-                              poly_max[0],
-                              polynomials_tmp,
-                              xi))
+        if (!copy_poly_in_tmp<T>(0,
+                                 z,
+                                 period[0],
+                                 lower_corner[0],
+                                 upper_corner[0],
+                                 polynomials,
+                                 poly_min[0],
+                                 poly_max[0],
+                                 polynomials_tmp,
+                                 xi))
             continue;
 
         for (int y = dir_min[1]; y <= dir_max[1]; y++) {
-            if (!copy_poly_in_tmp(1,
-                                  y,
-                                  period[1],
-                                  lower_corner[1],
-                                  upper_corner[1],
-                                  polynomials,
-                                  poly_min[1],
-                                  poly_max[1],
-                                  polynomials_tmp,
-                                  xi))
+            if (!copy_poly_in_tmp<T>(1,
+                                     y,
+                                     period[1],
+                                     lower_corner[1],
+                                     upper_corner[1],
+                                     polynomials,
+                                     poly_min[1],
+                                     poly_max[1],
+                                     polynomials_tmp,
+                                     xi))
                 continue;
 
 
             bool compute = true;
             for (int x = dir_min[0]; x <= dir_max[2]; x++) {
-                if (!copy_poly_in_tmp(2,
-                                      x,
-                                      period[2],
-                                      lower_corner[2],
-                                      upper_corner[2],
-                                      polynomials,
-                                      poly_min[2],
-                                      poly_max[2],
-                                      polynomials_tmp,
-                                      xi))
+                if (!copy_poly_in_tmp<T>(2,
+                                         x,
+                                         period[2],
+                                         lower_corner[2],
+                                         upper_corner[2],
+                                         polynomials,
+                                         poly_min[2],
+                                         poly_max[2],
+                                         polynomials_tmp,
+                                         xi))
                     continue;
+
+                memset(xi.template at<CPU>(2, 0), 0, sizeof(T) * xi.size(1));
+
                 if (compute) {
                     /* compute the exponential correction */
                     timer.start("exponentials_generic");
@@ -841,7 +834,7 @@ template <typename T> void collocate_non_orthorombic(const mdarray<T, 3, CblasRo
                     timer.stop("exponentials_generic");
                     compute = false;
                 }
-
+                Vtmp.zero();
                 /*  do the matrix-matrix multiplication */
                 collocate_core(n, co, polynomials_tmp, Vtmp);
                 /* can do that in parallel with collocate_core */
@@ -874,10 +867,12 @@ template <typename T> void collocate_non_orthorombic(const mdarray<T, 3, CblasRo
                         const T *__restrict src3 = Vtmp.template at<CPU>(z1, y1, 0);
                         T*__restrict dst = density.template at<CPU>(z1, y1, 0);
                         for (int x1 = 0; x1 < density.size(2); x1++) {
-                            dst[x1] += src3[x1] * src2[x1] * src1[x1] * tmp;
+                            //    dst[x1] += src3[x1] * src2[x1] * src1[x1] * tmp;
+                            dst[x1] += src3[x1];
                         }
                     }
                 }
+                printf("%.10lf\n", density(10, 10, 10));
             }
         }
     }
@@ -1062,7 +1057,7 @@ int main(int argc, char **argv)
     timer.stop("tests");
 
     timer.start("total");
-    for (int s = 0; s < 1000; s++) {
+    for (int s = 0; s < 1; s++) {
         if ((s % 1000) == 0)
             printf("%d\n", s);
 
@@ -1132,6 +1127,8 @@ int main(int argc, char **argv)
                           Potential);
 
         timer.stop("collocate");
+
+        printf("%5lf\n", co(0, 0, 0));
         timer.start("collocate_non_orthorombic");
         collocate_non_orthorombic<double>(p_alpha,
                                           co,
@@ -1141,9 +1138,7 @@ int main(int argc, char **argv)
                                           center, // compared to the (0, 0, 0) of the global grid.
                                           period,
                                           basis,
-                                          dr,
                                           mu_mean,
-                                          r_ab,
                                           Potential1);
         timer.stop("collocate_non_orthorombic");
         // if (generic) {
