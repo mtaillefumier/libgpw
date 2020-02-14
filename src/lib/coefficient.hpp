@@ -6,35 +6,46 @@
 // we need to add 3 for the first derivatives along x, y, z (if needed)
 // we go from l = 0 to l = 9
 
-static const int length_[] = {1, 3, 6, 10, 15, 21, 28, 36, 45, 55};
+inline int return_length_l(const int l) {
+		static const int length_[] = {1, 3, 6, 10, 15, 21, 28, 36, 45, 55};
+		return length_[l];
+}
+
+inline int return_exponents(const int index){
 
 // the possible indices are encoded as z * 2 ^ 16 + y * 2 ^ 8 + x.
-static const int exponents[] = {0, 1, 256, 65536, 2, 257, 512, 65537, 65792, 131072, 3, 258, 513, \
-																768, 65538, 65793, 66048, 131073, 131328, 196608, 4, 259, 514, 769, \
-																1024, 65539, 65794, 66049, 66304, 131074, 131329, 131584, 196609, \
-																196864, 262144, 5, 260, 515, 770, 1025, 1280, 65540, 65795, 66050, \
-																66305, 66560, 131075, 131330, 131585, 131840, 196610, 196865, 197120, \
-																262145, 262400, 327680, 6, 261, 516, 771, 1026, 1281, 1536, 65541, \
-																65796, 66051, 66306, 66561, 66816, 131076, 131331, 131586, 131841, \
-																132096, 196611, 196866, 197121, 197376, 262146, 262401, 262656, \
-																327681, 327936, 393216, 7, 262, 517, 772, 1027, 1282, 1537, 1792, \
-																65542, 65797, 66052, 66307, 66562, 66817, 67072, 131077, 131332, \
-																131587, 131842, 132097, 132352, 196612, 196867, 197122, 197377, \
-																197632, 262147, 262402, 262657, 262912, 327682, 327937, 328192, \
-																393217, 393472, 458752, 8, 263, 518, 773, 1028, 1283, 1538, 1793, \
-																2048, 65543, 65798, 66053, 66308, 66563, 66818, 67073, 67328, 131078, \
-																131333, 131588, 131843, 132098, 132353, 132608, 196613, 196868, \
-																197123, 197378, 197633, 197888, 262148, 262403, 262658, 262913, \
-																263168, 327683, 327938, 328193, 328448, 393218, 393473, 393728, \
-																458753, 459008, 524288, 9, 264, 519, 774, 1029, 1284, 1539, 1794, \
-																2049, 2304, 65544, 65799, 66054, 66309, 66564, 66819, 67074, 67329, \
-																67584, 131079, 131334, 131589, 131844, 132099, 132354, 132609, \
-																132864, 196614, 196869, 197124, 197379, 197634, 197889, 198144, \
-																262149, 262404, 262659, 262914, 263169, 263424, 327684, 327939, \
-																328194, 328449, 328704, 393219, 393474, 393729, 393984, 458754, \
-																459009, 459264, 524289, 524544, 589824};
+		static const int exponents[] = {0, 1, 256, 65536, 2, 257, 512, 65537, 65792, 131072, 3, 258, 513, \
+																		768, 65538, 65793, 66048, 131073, 131328, 196608, 4, 259, 514, 769, \
+																		1024, 65539, 65794, 66049, 66304, 131074, 131329, 131584, 196609, \
+																		196864, 262144, 5, 260, 515, 770, 1025, 1280, 65540, 65795, 66050, \
+																		66305, 66560, 131075, 131330, 131585, 131840, 196610, 196865, 197120, \
+																		262145, 262400, 327680, 6, 261, 516, 771, 1026, 1281, 1536, 65541, \
+																		65796, 66051, 66306, 66561, 66816, 131076, 131331, 131586, 131841, \
+																		132096, 196611, 196866, 197121, 197376, 262146, 262401, 262656, \
+																		327681, 327936, 393216, 7, 262, 517, 772, 1027, 1282, 1537, 1792, \
+																		65542, 65797, 66052, 66307, 66562, 66817, 67072, 131077, 131332, \
+																		131587, 131842, 132097, 132352, 196612, 196867, 197122, 197377, \
+																		197632, 262147, 262402, 262657, 262912, 327682, 327937, 328192, \
+																		393217, 393472, 458752, 8, 263, 518, 773, 1028, 1283, 1538, 1793, \
+																		2048, 65543, 65798, 66053, 66308, 66563, 66818, 67073, 67328, 131078, \
+																		131333, 131588, 131843, 132098, 132353, 132608, 196613, 196868, \
+																		197123, 197378, 197633, 197888, 262148, 262403, 262658, 262913, \
+																		263168, 327683, 327938, 328193, 328448, 393218, 393473, 393728, \
+																		458753, 459008, 524288, 9, 264, 519, 774, 1029, 1284, 1539, 1794, \
+																		2049, 2304, 65544, 65799, 66054, 66309, 66564, 66819, 67074, 67329, \
+																		67584, 131079, 131334, 131589, 131844, 132099, 132354, 132609, \
+																		132864, 196614, 196869, 197124, 197379, 197634, 197889, 198144, \
+																		262149, 262404, 262659, 262914, 263169, 263424, 327684, 327939, \
+																		328194, 328449, 328704, 393219, 393474, 393729, 393984, 458754, \
+																		459009, 459264, 524289, 524544, 589824};
+		return exponents[index];
+}
 
-static const int offset_[10] = {0, 1, 4, 10, 20, 35, 56, 84, 120, 165};
+inline int return_offset_l(const int l)
+{
+		static const int offset_[10] = {0, 1, 4, 10, 20, 35, 56, 84, 120, 165};
+		return offset_[l];
+}
 
 inline int return_linear_index_from_exponents(const int alpha, const int beta, const int gamma)
 {
@@ -70,8 +81,8 @@ template <typename T> void compute_polynomial_coefficients_derivatives(const mda
 												for (int b2 = 0; b2 <= l2 - a2; b2++) {
 														const int g1 = l1 - b1 - a1;
 														const int g2 = l2 - b2 - a2;
-														const int i1 = offset_[l1] + return_linear_index_from_exponents(a1, b1, g1);
-														const int i2 = offset_[l2] + return_linear_index_from_exponents(a2, b2, g2);
+														const int i1 = return_offset_l(l1) + return_linear_index_from_exponents(a1, b1, g1);
+														const int i2 = return_offset_l(l2) + return_linear_index_from_exponents(a2, b2, g2);
 														const T coefs = coef(i1, i2);
 														{
 																const int a11 = a1 - 1;
@@ -286,8 +297,8 @@ template <typename T> void compute_compact_polynomial_coefficients(const mdarray
 
 
 														*/
-														const int i1 = offset_[l1] + return_linear_index_from_exponents(a1, b1, g1);
-														const int i2 = offset_[l2] + return_linear_index_from_exponents(a2, b2, g2);
+														const int i1 = return_offset_l(l1) + return_linear_index_from_exponents(a1, b1, g1);
+														const int i2 = return_offset_l(l2) + return_linear_index_from_exponents(a2, b2, g2);
 														const T coef_i1_i2 = coef(i1, i2);
 														for (int k1 = 0; k1 <= a1; k1++) {
 																const T cst1 = coef_i1_i2 * power(0, 0, a1, a1 - k1);
@@ -309,6 +320,44 @@ template <typename T> void compute_compact_polynomial_coefficients(const mdarray
 																		}
 																}
 														}
+												}
+										}
+								}
+						}
+				}
+		}
+}
+
+/* precompute the coefficients of the polynomials for a fixed z coordinates and
+ * values of the exponents a1, a2. the result is then something like this in
+ * math notation
+
+	A^z_{\alpha_1, \alpha_2, y}.
+
+	to obtain the final result we just do this
+
+	dens_{x,y,z} = \sum_{\alpha_1\alpha_2} Px_{\alpha_1\alpha_2,x} A^z_{\alpha1,alpha2,y}
+
+	it is just a matrix-matrix multiplication when we collapse the index alpha_{1,2} together
+
+*/
+template <typename T> void compute_polynomial_coefficients(const mdarray<T, 2, CblasRowMajor> &coef,
+																													 const int lmin[2], const int lmax[2],
+																													 mdarray<T, 3, CblasRowMajor> &co)
+{
+		co.zero();
+		for (int a1 = 0; a1 <= lmax[0]; a1++) {
+				for (int a2 = 0; a2 <= lmax[1]; a2++) {
+						double res = 0.0;
+						for (int l1 = lmin[0]; l1 <= lmax[0]; l1++) {
+								for (int l2 = lmin[1]; l2 <= lmax[1]; l2++) {
+										for (int b1 = 0; b1 <= l1 - a1; b1++) {
+												for (int b2 = 0; b2 <= l2 - a2; b2++) {
+														const int g1 = l1 - b1 - a1;
+														const int g2 = l2 - b2 - a2;
+														int i1 = return_offset_l(l1) + return_linear_index_from_exponents(a1, b1, g1);
+														int i2 = return_offset_l(l2) + return_linear_index_from_exponents(a2, b2, g2);
+														co(a1 * (lmax[1] + 1) + a2, g1 * (lmax[1] + 1) + g2, b1 * (lmax[1] + 1) + b2) += coef(i1, i2);
 												}
 										}
 								}

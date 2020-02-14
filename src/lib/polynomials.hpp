@@ -1,6 +1,7 @@
 #ifndef POLYNOMIALS_HPP
 #define POLYNOMIALS_HPP
 
+
 template <typename T> void compute_polynomials_non_zero_elems(const mdarray<T, 3, CblasRowMajor> &p_alpha_beta_folded,
 																															const mdarray<int, 2, CblasRowMajor> &yz_non_vanishing_elements,
 																															const int grid_lower_corner[3],
@@ -111,30 +112,36 @@ template<typename T> void calculate_polynomials(const int l,
 		if (p_alpha.size())
 				p_alpha.clear();
 
-		p_alpha = mdarray<T, 3, CblasRowMajor>(3, l + 1, 2 * n_max + 1);
+		p_alpha = mdarray<T, 3, CblasRowMajor>(3, l + 2, 2 * n_max + 1);
 		p_alpha.zero();
 
 		// std::cout << r_a[0] << " " << r_a[1] << " " << r_a[2] << "\n";
 		// std::cout << std::fmod(r_a[0], dr[0]) << " " << std::fmod(r_a[1], dr[1]) << " " << std::fmod(r_a[2], dr[2]) << "\n";
 
 		for (int d = 0; d < 3; d++) {
-				T *__restrict dst = p_alpha.template at<CPU>(d, 0, 0) + length__[d];
 				double rab = std::fmod(r_a[d], dr[d]);
+				/*
+				 *	Store the (x - x_i) values as well. It is only used when we consider
+				 * the non-orthorombic case
+				 */
+				T *__restrict dst = p_alpha.template at<CPU>(d, l + 1, 0) + length__[d];
 				for (int i = - length__[0]; i <= length__[0]; i++) {
-						dst[i] = exp(-mu_mean * (((double)i) * dr[d] + rab) * (((double)i) * dr[d] + rab));
+						dst[i] = ((double)i) * dr[d] + rab;
 				}
 
-				// we add the extra exponent for the forces
-				// [0..n_max-1] positive r_alpha from 0..n_max * dr_alpha
-				// [n_max,.. 2 n_max + 1] negative r_alpha
-				// fft convention for the frequency domain
+				dst = p_alpha.template at<CPU>(d, 0, 0);
+				const T *__restrict src = p_alpha.template at<CPU>(d, l + 1, 0);
+				for (int i = 0; i < (2 * length__[0] + 1); i++) {
+						dst[i] = exp(-mu_mean * src[i] * src[i]);
+				}
+
+
 				rab = std::fmod(r_a[d], dr[d]);
 				for (int m = 1; m < l + 1; m++) {
-						// ugly as hell. I shift the pointer addresses
-						const T *__restrict src = p_alpha.template at<CPU>(d, m - 1, 0) + length__[d];
-						T *__restrict dst = p_alpha.template at<CPU>(d, m, 0) + length__[d];
-						for (int i = - length__[d]; i <= length__[d]; i++) {
-								dst[i] = (((double)i) * dr[d] + rab) * src[i];
+						const T *__restrict src1 = p_alpha.template at<CPU>(d, m - 1, 0);
+						dst = p_alpha.template at<CPU>(d, m, 0);
+						for (int i = 0; i < (2 * length__[d] + 1); i++) {
+								dst[i] = src1[i] * src[i];
 						}
 				}
 		}
@@ -147,36 +154,70 @@ template<typename T> void calculate_polynomials(const int l,
 template <typename T> bool copy_poly_in_tmp(const int dir,
 																						const int pos,
 																						const int period,
-																						const int lower_bound,
-																						const int upper_bound,
+																						const int lower_corner,
+																						const int upper_corner,
 																						const mdarray<T, 3, CblasRowMajor> &polynomials,
 																						const int poly_min, /* position of the starting point of the gaussian in grid coordinates */
 																						const int poly_max, /* position of the ending point of the gaussian in grid coordonates (non periodic boundaries conditions) */
-																						mdarray<T, 3, CblasRowMajor> &polynomials_tmp)
+																						mdarray<T, 3, CblasRowMajor> &polynomials_tmp,
+																						mdarray<T, 2, CblasRowMajor> &xi)
 {
-		if (pos * (period + 1) < poly_min)
+		// check if we have no zero polynomials elements
+
+		// check if the window at position pos [pos * period, (pos + 1) * period] intersects [poly_min .. poly_max]
+
+		// no intersection
+		if ((pos + 1) * period < poly_min)
 				return false;
 
-		if (pos * (period - 1) > poly_max)
+		// no intersection
+		if (pos * period > poly_max)
 				return false;
 
-		int z1 = (std::max(pos * period + lower_bound, poly_min) + 32 * period) % period;
+		// [pos * period, (pos + 1) * period) intersects [poly_min .. poly_max]
 
-		if (z1 > upper_bound)
+		// what are the boundaries of the intersection
+
+		const int i_min = std::max(pos * period, poly_min);
+		const int i_max = std::min((pos + 1) * period, poly_max);
+
+		// we have the interval
+
+		// now check if the window [lower_corner..upper_corner) is there
+		// std::cout << "ZB : " << pos * period << " " << (pos + 1) * period << "\n";
+		// std::cout << poly_min << " " << poly_max << "\n";
+		// std::cout << i_min << " " << i_max << "\n";
+
+		int j_min =std::max(pos * period + lower_corner, i_min);
+		int j_max =std::min(pos * period + upper_corner, i_max);
+
+		if (j_min > pos * period + upper_corner)
 				return false;
 
-		int z2 = (std::min(pos * period + upper_bound, poly_max) + 32 * period) % period;
-
-		if (z2 < lower_bound)
+		if (j_max < pos * period + lower_corner)
 				return false;
 
-		const int start = std::max(pos * period + lower_bound - poly_min, 0);
+		j_min = (j_min + 32 * period) % period - lower_corner;
+		j_max = (j_max + 32 * period - 1) % period - lower_corner;
+		j_max++;
+
+		// the cell is inside the window
+
+		const int offset = std::max(poly_min, pos * period + lower_corner) - poly_min;
+
 		/* z1 and z2 are within the local window */
-		for (int alpha = 0; alpha < polynomials.size(0); alpha++) {
-				memcpy(polynomials_tmp.template at<CPU>(dir, alpha, z1 - lower_bound),
-							 polynomials.template at<CPU>(dir, alpha, start),
-							 (z2 - z1) * sizeof(T));
+		for (int alpha = 0; alpha < polynomials.size(1) - 1; alpha++) {
+				memcpy(polynomials_tmp.template at<CPU>(dir, alpha, j_min),
+							 polynomials.template at<CPU>(dir, alpha, offset),
+							 (j_max - j_min) * sizeof(T));
 		}
+
+		/* xi contains the x - xi that are used for computing[] */
+		memcpy(xi.template at<CPU>(dir, j_min),
+					 polynomials.template at<CPU>(dir, polynomials.size(1) - 1, offset),
+					 (j_max - j_min) * sizeof(T));
+
+		return true;
 }
 
 void find_interval(const std::vector<int> &folded_table_index, int *__restrict interval_, int &kmax_) {
@@ -185,17 +226,53 @@ void find_interval(const std::vector<int> &folded_table_index, int *__restrict i
 				interval_[i] = 0;
 
 		int k = 0;
+		kmax_ = 0;
+		for (int i = 0; i < (int)folded_table_index.size(); i++) {
+				if (!folded_table_index[i])
+						continue;
 
-		k += folded_table_index[0];
+				const int imin = i;
+				for (;folded_table_index[i] && (i < ((int)folded_table_index.size() - 1));i++);
 
-		for (int i = 0; i < folded_table_index.size() - 1; i++) {
-				int test1 = folded_table_index[i + 1] > folded_table_index[i];
-				int test2 = folded_table_index[i + 1] < folded_table_index[i];
-				interval_[k] += test1 * (i + 1) + test2 * i;
-				k += test1 + test2;
+				int imax = i;
+
+				interval_[k] = imin;
+				k++;
+
+				if ((folded_table_index[i] != 0) && (i == ((int)folded_table_index.size() - 1)))
+						imax++;
+				interval_[k] = imax;
+				k++;
+				kmax_++;
 		}
-		interval_[k] += folded_table_index[folded_table_index.size() - 1] * (folded_table_index.size() - 1);
-		kmax_ = k;
 }
+
+void find_interval(const int *folded_table_index, const int length, int *__restrict interval_, int &kmax_) {
+
+		for (int i = 0; i < 16; i++)
+				interval_[i] = 0;
+
+		int k = 0;
+		kmax_ = 0;
+		for (int i = 0; i < length; i++) {
+				if (!folded_table_index[i])
+						continue;
+
+				const int imin = i;
+				for (;folded_table_index[i] && (i < (length - 1));i++);
+
+				int imax = i;
+
+				interval_[k] = imin;
+				k++;
+
+				if ((folded_table_index[i] != 0) && (i == (length - 1)))
+						imax++;
+				interval_[k] = imax;
+				k++;
+				kmax_++;
+		}
+}
+
 
 #endif
