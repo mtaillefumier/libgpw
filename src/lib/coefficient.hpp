@@ -53,23 +53,21 @@ inline int return_linear_index_from_exponents(const int alpha, const int beta, c
 		return (l - alpha) * (l - alpha - 1) / 2 + gamma;
 }
 
-/* precompute the coefficients of the polynomials derivatives (needed for the
- * kinetic energy) for a fixed z coordinates and values of the exponents a1, a2.
- * the result is then something like this in math notation
+/* precompute the coefficients for the collocate function that correspond to the operation
 
-	A^z_{\alpha_1, \alpha_2, y}.
+	 \f[
+	 0.5 * (\nabla \phi^{\alpha}_a ) (\nabla \phi^{\beta}_b) &=& \\
 
-	to obtain the final result we just do this
+	 0.5 * (\alpha \phi^{\alpha - 1}_a - 2 \eta_a * \phi^{\alpha + 1})
+	 &\times& (\beta \phi^{\beta - 1}_b - 2 \eta_b * \phi^{\beta + 1}_b)
 
-	dens_{x,y,z} = \sum_{\alpha_1\alpha_2} Px_{\alpha_1\alpha_2,x} A^z_{\alpha1,alpha2,y}
-
-	it is just a matrix-matrix multiplication when we collapse the index alpha_{1,2} together
+	 \f]
 
 */
-template <typename T> void compute_polynomial_coefficients_derivatives(const mdarray<T, 2, CblasRowMajor> &coef,
-																																			 const double eta_1, const double eta_2,
-																																			 const int lmin[2], const int lmax[2],
-																																			 mdarray<T, 3, CblasRowMajor> &co)
+template <typename T> void compute_polynomial_coefficients_DADB(const mdarray<T, 2, CblasRowMajor> &coef,
+																																const double eta_1, const double eta_2,
+																																const int lmin[2], const int lmax[2], /* lmin and lmax should be the one from coef */
+																																mdarray<T, 3, CblasRowMajor> &co)
 {
 		co.zero();
 		for (int a1 = 0; a1 <= lmax[0]; a1++) {
@@ -193,10 +191,173 @@ template <typename T> void compute_polynomial_coefficients_derivatives(const mda
 						}
 				}
 		}
+
+		cblas_dscal(co.size(), 0.5, co.template at<CPU>(), 1);
 }
 
+/* compute the coefficients corresponding the function
+
+	 pgf_a (nabla_{idir} pgf_b) - (nabla_{idir} pgf_a) pgf_b
+
+	 ( pgf_a ) (ddx pgf_b) - (ddx pgf_a)( pgf_b ) =
+	 pgf_a *(b pgf_{b-1} - 2 * zetb * pgf_{b+1x}) -
+	 (lax pgf_{a-1x} - 2 * zeta * pgf_{a+1x}) pgf_b
+
+
+*/
+
+template <typename T> void compute_polynomial_coefficients_ADBmDAB(const int direction, /* component
+																																												 * of
+																																												 * the
+																																												 * gradient
+																																												 * of
+																																												 * the
+																																												 * collocated
+																																												 * function */
+																																	 const mdarray<T, 2, CblasRowMajor> &coef,
+																																	 const double eta_1, const double eta_2,
+																																	 const int lmin_coef[2], const int lmax_coef[2],
+																																	 const int lmin_[2], const int lmax_[2],
+																																	 mdarray<T, 3, CblasRowMajor> &co)
+{
+		/* it is similar to compute_polynomial_coefficients_DADB without the
+			 summation over the directions
+
+			 so we have term for a given direction
+			 a and b are the exponents of the polynomials prefactors in a given direction
+
+			 (a, b - 1) -> b
+			 (a, b + 1) -> -2 \eta_2
+			 (a - 1, b) -> -a
+			 (a + 1, b) -> 2 \eta_1
+
+		*/
+
+		co.zero();
+		for (int a1 = 0; a1 <= lmax_coef[0]; a1++) {
+				for (int a2 = 0; a2 <= lmax_coef[1]; a2++) {
+						double res = 0.0;
+						for (int l1 = lmin_coef[0]; l1 <= lmax_coef[0]; l1++) {
+								for (int l2 = lmin_coef[1]; l2 <= lmax_coef[1]; l2++) {
+										for (int b1 = 0; b1 <= l1 - a1; b1++) {
+												for (int b2 = 0; b2 <= l2 - a2; b2++) {
+														const int g1 = l1 - b1 - a1;
+														const int g2 = l2 - b2 - a2;
+														const int i1 = return_offset_l(l1) + return_linear_index_from_exponents(a1, b1, g1);
+														const int i2 = return_offset_l(l2) + return_linear_index_from_exponents(a2, b2, g2);
+														const T coefs = coef(i1, i2);
+														if (direction == 1) {
+																// along x
+																const int a11 = a1 - 1;
+																const int a12 = a1 + 1;
+																const int a21 = a2 - 1;
+																const int a22 = a2 + 1;
+
+																/* (a, b + 1) : - 2 \eta_2 */
+																co(a1 * (lmax_[1] + 1) + a22,
+																	 g1 * (lmax_[1] + 1) + g2,
+																	 b1 * (lmax_[1] + 1) + b2) -= 2.0  * eta_2 * coefs;
+
+																/* (a , b - 1) : b */
+
+																if (a21 >= 0)
+																		co(a1 * (lmax_[1] + 1) + a21,
+																			 g1 * (lmax_[1] + 1) + g2,
+																			 b1 * (lmax_[1] + 1) + b2) += a2 * coefs;
+
+																/* (a - 1, b) : -a */
+
+																if (a11 >= 0)
+																		co(a11 * (lmax_[1] + 1) + a2,
+																			 g1 * (lmax_[1] + 1) + g2,
+																			 b1 * (lmax_[1] + 1) + b2) -= a1 * coefs;
+
+																/* (a + 1, b) : + 2 \eta_1 */
+
+																co(a12 * (lmax_[1] + 1) + a2,
+																	 g1 * (lmax_[1] + 1) + g2,
+																	 b1 * (lmax_[1] + 1) + b2) = 2.0 * eta_1 * coefs;
+														}
+
+														if (direction == 2) {
+																// along y
+																const int b11 = b1 - 1;
+																const int b12 = b1 + 1;
+																const int b21 = b2 - 1;
+																const int b22 = b2 + 1;
+
+																/* (a, b + 1) : - 2 \eta_2 */
+																co(a1 * (lmax_[1] + 1) + a2,
+																	 g1 * (lmax_[1] + 1) + g2,
+																	 b1 * (lmax_[1] + 1) + b22) -= 2.0  * eta_2 * coefs;
+
+																/* (a , b - 1) : b */
+
+																if (b21 >= 0)
+																		co(a1 * (lmax_[1] + 1) + a2,
+																			 g1 * (lmax_[1] + 1) + g2,
+																			 b1 * (lmax_[1] + 1) + b21) += a2 * coefs;
+
+																/* (a - 1, b) : -a */
+
+																if (b11 >= 0)
+																		co(a1 * (lmax_[1] + 1) + a2,
+																			 g1 * (lmax_[1] + 1) + g2,
+																			 b11 * (lmax_[1] + 1) + b2) -= a1 * coefs;
+
+																/* (a + 1, b) : + 2 \eta_1 */
+
+																co(a1 * (lmax_[1] + 1) + a2,
+																	 g1 * (lmax_[1] + 1) + g2,
+																	 b12 * (lmax_[1] + 1) + b2) = 2.0 * eta_1 * coefs;
+														}
+
+
+														if (direction == 3) {
+																// along y
+																const int g11 = g1 - 1;
+																const int g12 = g1 + 1;
+																const int g21 = g2 - 1;
+																const int g22 = g2 + 1;
+
+																/* (a, b + 1) : - 2 \eta_2 */
+																co(a1 * (lmax_[1] + 1) + a2,
+																	 g1 * (lmax_[1] + 1) + g22,
+																	 b1 * (lmax_[1] + 1) + b2) -= 2.0  * eta_2 * coefs;
+
+																/* (a , b - 1) : b */
+
+																if (g21 >= 0)
+																		co(a1 * (lmax_[1] + 1) + a2,
+																			 g21 * (lmax_[1] + 1) + g2,
+																			 b1 * (lmax_[1] + 1) + b2) += a2 * coefs;
+
+																/* (a - 1, b) : -a */
+
+																if (g11 >= 0)
+																		co(a1 * (lmax_[1] + 1) + a2,
+																			 g11 * (lmax_[1] + 1) + g2,
+																			 b1 * (lmax_[1] + 1) + b2) -= a1 * coefs;
+
+																/* (a + 1, b) : + 2 \eta_1 */
+
+																co(a1 * (lmax_[1] + 1) + a2,
+																	 g2 * (lmax_[1] + 1) + g2,
+																	 b1 * (lmax_[1] + 1) + b2) = 2.0 * eta_1 * coefs;
+														}
+												}
+										}
+								}
+						}
+				}
+		}
+}
+
+
+
 template <typename T> void compute_compact_polynomial_coefficients(const mdarray<T, 2, CblasRowMajor> &coef,
-																																	 const int lmin[2], const int lmax[2],
+																																	 const int *coef_offset_,
+																																	 const int *lmin, const int *lmax,
 																																	 const T *ra, const T *rb, const T *rab,
 																																	 mdarray<T, 3, CblasRowMajor> &co)
 {
@@ -297,8 +458,8 @@ template <typename T> void compute_compact_polynomial_coefficients(const mdarray
 
 
 														*/
-														const int i1 = return_offset_l(l1) + return_linear_index_from_exponents(a1, b1, g1);
-														const int i2 = return_offset_l(l2) + return_linear_index_from_exponents(a2, b2, g2);
+														const int i1 = coef_offset_[0] + return_offset_l(l1) + return_linear_index_from_exponents(a1, b1, g1);
+														const int i2 = coef_offset_[1] + return_offset_l(l2) + return_linear_index_from_exponents(a2, b2, g2);
 														const T coef_i1_i2 = coef(i1, i2);
 														for (int k1 = 0; k1 <= a1; k1++) {
 																const T cst1 = coef_i1_i2 * power(0, 0, a1, a1 - k1);
@@ -341,7 +502,8 @@ template <typename T> void compute_compact_polynomial_coefficients(const mdarray
 	it is just a matrix-matrix multiplication when we collapse the index alpha_{1,2} together
 
 */
-template <typename T> void compute_polynomial_coefficients(const mdarray<T, 2, CblasRowMajor> &coef,
+template <typename T> void extract_polynomial_coefficients(const mdarray<T, 2, CblasRowMajor> &coef,
+																													 const int *coef_offset_,
 																													 const int lmin[2], const int lmax[2],
 																													 mdarray<T, 3, CblasRowMajor> &co)
 {
@@ -355,8 +517,8 @@ template <typename T> void compute_polynomial_coefficients(const mdarray<T, 2, C
 												for (int b2 = 0; b2 <= l2 - a2; b2++) {
 														const int g1 = l1 - b1 - a1;
 														const int g2 = l2 - b2 - a2;
-														int i1 = return_offset_l(l1) + return_linear_index_from_exponents(a1, b1, g1);
-														int i2 = return_offset_l(l2) + return_linear_index_from_exponents(a2, b2, g2);
+														int i1 = coef_offset_[0] + return_offset_l(l1) + return_linear_index_from_exponents(a1, b1, g1);
+														int i2 = coef_offset_[1] + return_offset_l(l2) + return_linear_index_from_exponents(a2, b2, g2);
 														co(a1 * (lmax[1] + 1) + a2, g1 * (lmax[1] + 1) + g2, b1 * (lmax[1] + 1) + b2) += coef(i1, i2);
 												}
 										}
@@ -365,5 +527,7 @@ template <typename T> void compute_polynomial_coefficients(const mdarray<T, 2, C
 				}
 		}
 }
+
+
 
 #endif
